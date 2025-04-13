@@ -25,13 +25,14 @@ def get_specific_date_papers(target_date: str) -> List[Dict]:
     client = arxiv.Client()
     search = arxiv.Search(
         query='cat:cs.AI',
-        max_results=100,
+        max_results=200,  # 더 많은 결과를 가져옴
         sort_by=arxiv.SortCriterion.SubmittedDate,
         sort_order=arxiv.SortOrder.Descending
     )
     
     # 논문 수집
     papers = []
+    error_retries = 0
     try:
         for paper in client.results(search):
             # target_end보다 이후의 논문은 건너뛰기
@@ -39,6 +40,13 @@ def get_specific_date_papers(target_date: str) -> List[Dict]:
                 continue
             # target_start보다 이전의 논문은 더 이상 볼 필요 없음
             if paper.published < target_start:
+                # 하지만 논문이 하나도 없으면 더 이전 날짜까지 확인
+                if len(papers) == 0 and error_retries < 3:
+                    error_retries += 1
+                    print(f"해당 날짜({target_date})의 논문을 찾지 못했습니다. 이전 날짜 확인 중... ({error_retries}/3)")
+                    # 검색 범위를 1일 더 확장
+                    target_start = target_start - datetime.timedelta(days=1)
+                    continue
                 break
             # target_start와 target_end 사이의 논문만 수집
             papers.append(paper)
@@ -50,7 +58,7 @@ def get_specific_date_papers(target_date: str) -> List[Dict]:
     
     return papers
 
-def save_top10(papers: List[Dict], analyzer: PaperQualityAnalyzer):
+def save_top10(papers: List[Dict], analyzer: PaperQualityAnalyzer, target_date: str):
     # 논문 품질 점수 계산 및 정렬
     paper_scores = []
     for paper in papers:
@@ -81,7 +89,7 @@ def save_top10(papers: List[Dict], analyzer: PaperQualityAnalyzer):
     df = pd.DataFrame(top10)
     
     # 결과 출력
-    print(f"\n=== {datetime.datetime.now(pytz.UTC).strftime('%Y-%m-%d')}의 Top 10 논문 ===")
+    print(f"\n=== {target_date}의 Top 10 논문 ===")
     print("순위 | 제목 | URL | 품질점수 | 저자수 | 카테고리 | 게시일 | 수정일")
     print("-" * 150)
     
@@ -110,7 +118,7 @@ def analyze_and_generate_report(papers: List[Dict], target_date: str):
     analyzer = PaperQualityAnalyzer()
     
     # Get top 10 papers
-    top10_papers = save_top10(papers, analyzer)
+    top10_papers = save_top10(papers, analyzer, target_date)
     
     # Analyze papers
     analysis_results = []
